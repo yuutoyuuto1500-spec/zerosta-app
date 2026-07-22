@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="ja">
+<!--
+  ============================================================
+  ゼロスタ学習ノート v1
+  ============================================================
+  Zerosta の生徒用学習アプリ。
+  - ログイン（メール＋パスワード、Firebase認証）
+  - AI会話（英会話練習 / 質問・添削。Gemini API）
+  - 英語日記（AI添削つき）
+  - 学習ログ（タイマー計測＋手入力、週間集計、連続日数）
+  - セッション記録（Zerostaセッション・オンライン英会話）
+
+  データはすべて Firestore の users/{自分のID}/ 以下に保存され、
+  ルールにより本人以外は読み書きできない。
+  ============================================================
+-->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ゼロスタ学習ノート</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="ゼロスタ">
+  <meta name="theme-color" content="#4f46e5">
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f4f5f7; --card: #ffffff; --text: #1c1c1e; --sub: #6e6e73;
+      --accent: #4f46e5;      /* テーマ色（インディゴ） */
+      --accent-soft: #eef0fe;
+      --green: #30a14e; --red: #d0342c; --line: #e5e5ea;
+    }
+    body {
+      font-family: -apple-system, "Hiragino Sans", sans-serif;
+      background: var(--bg); color: var(--text);
+      padding-bottom: 76px;
+    }
+    header {
+      background: var(--card); padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--line);
+      position: sticky; top: 0; z-index: 5;
+      display: flex; justify-content: space-between; align-items: baseline;
+    }
+    header h1 { font-size: 17px; color: var(--accent); }
+    header .who { font-size: 12px; color: var(--sub); }
+
+    section { padding: 16px; display: none; }
+    section.active { display: block; }
+
+    .card {
+      background: var(--card); border-radius: 14px; padding: 16px;
+      margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .card h2 { font-size: 13px; color: var(--sub); font-weight: 600; margin-bottom: 10px; }
+
+    label { display: block; font-size: 13px; color: var(--sub); margin: 10px 0 4px; }
+    input, textarea, select {
+      width: 100%; font-size: 16px; padding: 10px;
+      border: 1px solid var(--line); border-radius: 10px; background: #fafafa;
+      font-family: inherit;
+    }
+    textarea { min-height: 90px; resize: vertical; }
+    button.primary {
+      width: 100%; margin-top: 14px; padding: 13px; font-size: 16px; font-weight: 600;
+      color: #fff; background: var(--accent); border: none; border-radius: 12px;
+    }
+    button.primary:active { opacity: 0.7; }
+    button.primary:disabled { opacity: 0.4; }
+    button.ghost {
+      width: 100%; margin-top: 10px; padding: 11px; font-size: 14px;
+      color: var(--accent); background: var(--accent-soft); border: none; border-radius: 12px; font-weight: 600;
+    }
+    .error { color: var(--red); font-size: 13px; margin-top: 10px; min-height: 1em; }
+    .note { font-size: 12px; color: var(--sub); line-height: 1.7; }
+
+    /* ---- ログイン画面 ---- */
+    #authView { max-width: 420px; margin: 0 auto; padding: 40px 16px; }
+    #authView .logo { text-align: center; margin-bottom: 24px; }
+    #authView .logo .mark { font-size: 40px; }
+    #authView .logo h1 { font-size: 22px; color: var(--accent); margin-top: 6px; }
+    #authView .logo p { font-size: 13px; color: var(--sub); margin-top: 4px; }
+    .linkish { color: var(--accent); font-size: 13px; text-align: center; margin-top: 14px; text-decoration: underline; cursor: pointer; }
+
+    /* ---- ホームの数字 ---- */
+    .stat-row { display: flex; gap: 10px; }
+    .stat { flex: 1; background: var(--accent-soft); border-radius: 12px; padding: 12px; text-align: center; }
+    .stat .num { font-size: 22px; font-weight: 700; color: var(--accent); }
+    .stat .cap { font-size: 11px; color: var(--sub); margin-top: 2px; }
+    .bar-line { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; }
+    .bar-line .name { width: 70px; color: var(--sub); }
+    .bar-line .bar { flex: 1; height: 10px; background: var(--line); border-radius: 5px; overflow: hidden; }
+    .bar-line .bar > div { height: 100%; background: var(--accent); border-radius: 5px; }
+    .bar-line .min { width: 48px; text-align: right; color: var(--sub); }
+
+    /* ---- チャット ---- */
+    #chatBox {
+      display: flex; flex-direction: column; gap: 8px;
+      min-height: 200px; max-height: 45vh; overflow-y: auto;
+      padding: 4px 2px; margin-bottom: 10px;
+    }
+    .bubble {
+      max-width: 85%; padding: 10px 12px; border-radius: 14px;
+      font-size: 15px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+    }
+    .bubble.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+    .bubble.model { align-self: flex-start; background: #ececf1; border-bottom-left-radius: 4px; }
+    .bubble.thinking { align-self: flex-start; color: var(--sub); background: none; font-size: 13px; }
+    .chat-input-row { display: flex; gap: 8px; }
+    .chat-input-row textarea { min-height: 44px; max-height: 120px; flex: 1; }
+    .chat-input-row button {
+      width: 74px; border: none; border-radius: 12px; background: var(--accent);
+      color: #fff; font-weight: 600; font-size: 14px;
+    }
+    .mode-row { display: flex; gap: 8px; margin-bottom: 10px; }
+    .mode-btn {
+      flex: 1; padding: 9px; font-size: 13px; font-weight: 600;
+      border: 1px solid var(--line); border-radius: 10px; background: #fafafa; color: var(--sub);
+    }
+    .mode-btn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+
+    /* ---- 一覧の1行 ---- */
+    .item { padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .item:last-child { border-bottom: none; }
+    .item .top { display: flex; justify-content: space-between; align-items: center; }
+    .item .date { font-size: 12px; color: var(--sub); }
+    .item .body { font-size: 14px; line-height: 1.6; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
+    .item .fb { font-size: 13px; line-height: 1.6; margin-top: 6px; padding: 8px 10px; background: var(--accent-soft); border-radius: 10px; white-space: pre-wrap; }
+    .item .del { background: none; border: none; color: var(--red); font-size: 12px; padding: 4px 6px; }
+    .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
+
+    /* ---- タイマー ---- */
+    #timerDisplay { font-size: 44px; font-weight: 700; text-align: center; letter-spacing: 1px; margin: 8px 0; font-variant-numeric: tabular-nums; }
+    #timerDisplay.running { color: var(--accent); }
+
+    /* ---- 下タブ ---- */
+    nav {
+      position: fixed; bottom: 0; left: 0; right: 0; display: none;
+      background: var(--card); border-top: 1px solid var(--line);
+      padding-bottom: env(safe-area-inset-bottom); z-index: 5;
+    }
+    nav.visible { display: flex; }
+    nav button { flex: 1; padding: 9px 0 7px; background: none; border: none; font-size: 10px; color: var(--sub); }
+    nav button .icon { display: block; font-size: 19px; margin-bottom: 2px; }
+    nav button.active { color: var(--accent); font-weight: 600; }
+    details summary { cursor: pointer; font-size: 13px; color: var(--sub); }
+  </style>
+</head>
+
+<body>
+  <!-- ======== ログイン画面（未ログイン時のみ表示） ======== -->
+  <div id="authView">
+    <div class="logo">
+      <div class="mark">🚀</div>
+      <h1>ゼロスタ学習ノート</h1>
+      <p>英語学習の記録とAI練習パートナー</p>
+    </div>
+    <div class="card">
+      <div id="signupOnly">
+        <label for="authName">名前（ニックネーム可）</label>
+        <input type="text" id="authName" placeholder="例: ゆうと" autocomplete="name">
+      </div>
+      <label for="authEmail">メールアドレス</label>
+      <input type="email" id="authEmail" placeholder="you@example.com" autocomplete="email">
+      <label for="authPass">パスワード（6文字以上）</label>
+      <input type="password" id="authPass" placeholder="••••••" autocomplete="current-password">
+      <button class="primary" id="authBtn">新規登録</button>
+      <p class="error" id="authError"></p>
+      <p class="linkish" id="authToggle">アカウントを持っている人はこちら（ログイン）</p>
+    </div>
+    <p class="note" style="text-align:center;">アカウント情報と学習記録は本人だけが見られます。</p>
+  </div>
+
+  <!-- ======== アプリ本体（ログイン後に表示） ======== -->
+  <div id="appView" style="display:none;">
+    <header>
+      <h1>ゼロスタ学習ノート</h1>
+      <span class="who" id="whoami"></span>
+    </header>
+
+    <!-- ---- ホーム ---- -->
+    <section id="page-home" class="active">
+      <div class="card">
+        <h2 id="todayTitle">今日</h2>
+        <div class="stat-row">
+          <div class="stat"><div class="num" id="statToday">0分</div><div class="cap">今日の学習</div></div>
+          <div class="stat"><div class="num" id="statWeek">0分</div><div class="cap">今週の合計</div></div>
+          <div class="stat"><div class="num" id="statStreak">0日</div><div class="cap">連続学習 🔥</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>今週の内訳</h2>
+        <div id="weekBars"><p class="note">まだ記録がありません</p></div>
+      </div>
+      <div class="card">
+        <h2>クイックスタート</h2>
+        <button class="ghost" data-go="chat">🗣 AIと英語で話す</button>
+        <button class="ghost" data-go="diary">📔 今日の英語日記を書く</button>
+        <button class="ghost" data-go="log">⏱ 学習タイマーを回す</button>
+      </div>
+      <div class="card">
+        <h2>アカウント</h2>
+        <p class="note" id="accountInfo"></p>
+        <button class="ghost" id="logoutBtn">ログアウト</button>
+      </div>
+    </section>
+
+    <!-- ---- AI会話 ---- -->
+    <section id="page-chat">
+      <div class="card" id="aiNotice" style="display:none;">
+        <h2>AI機能は準備中です</h2>
+        <p class="note">運営側でAIの接続設定が済むと、ここで英会話練習ができるようになります。</p>
+      </div>
+      <div class="card" id="chatCard">
+        <div class="mode-row">
+          <button class="mode-btn on" id="modeTalk">🗣 英会話練習</button>
+          <button class="mode-btn" id="modeAsk">❓ 質問・添削</button>
+        </div>
+        <div id="chatBox"></div>
+        <div class="chat-input-row">
+          <textarea id="chatInput" placeholder="英語で話しかけてみよう"></textarea>
+          <button id="chatSend">送信</button>
+        </div>
+        <button class="ghost" id="chatEnd">会話を終了して記録する</button>
+        <p class="note" style="margin-top:8px;">終了すると会話が保存され、時間が学習ログに自動で足されます。</p>
+      </div>
+      <div class="card">
+        <h2>保存した会話</h2>
+        <div id="chatList"><p class="note">まだありません</p></div>
+      </div>
+    </section>
+
+    <!-- ---- 英語日記 ---- -->
+    <section id="page-diary">
+      <div class="card">
+        <h2>英語日記を書く</h2>
+        <label for="diaryDate">日付</label>
+        <input type="date" id="diaryDate">
+        <label for="diaryText">今日の日記（英語で。1〜3文でもOK）</label>
+        <textarea id="diaryText" placeholder="Today I ..."></textarea>
+        <div id="diaryFeedback" class="fb" style="display:none;"></div>
+        <button class="ghost" id="diaryAiBtn">🤖 AIに添削してもらう</button>
+        <button class="primary" id="diarySaveBtn">日記を保存</button>
+      </div>
+      <div class="card">
+        <h2>これまでの日記</h2>
+        <div id="diaryList"><p class="note">まだありません</p></div>
+      </div>
+    </section>
+
+    <!-- ---- 学習ログ ---- -->
+    <section id="page-log">
+      <div class="card">
+        <h2>タイマーで計る</h2>
+        <div id="timerDisplay">00:00</div>
+        <label for="timerCat">何をする？</label>
+        <select id="timerCat">
+          <option>AI会話</option><option>シャドーイング</option><option>単語</option>
+          <option>日記</option><option>オンライン英会話</option><option>その他</option>
+        </select>
+        <button class="primary" id="timerBtn">スタート</button>
+      </div>
+      <div class="card">
+        <h2>手入力で記録する</h2>
+        <label for="logDate">日付</label>
+        <input type="date" id="logDate">
+        <label for="logMin">時間（分）</label>
+        <input type="number" id="logMin" placeholder="例: 20" inputmode="numeric">
+        <label for="logCat">カテゴリ</label>
+        <select id="logCat">
+          <option>AI会話</option><option>シャドーイング</option><option>単語</option>
+          <option>日記</option><option>オンライン英会話</option><option>その他</option>
+        </select>
+        <label for="logNote">内容メモ（任意）</label>
+        <input type="text" id="logNote" placeholder="例: 教材Unit3を音読3回">
+        <button class="primary" id="logSaveBtn">記録する</button>
+      </div>
+      <div class="card">
+        <h2>学習の履歴</h2>
+        <div id="logList"><p class="note">まだありません</p></div>
+      </div>
+    </section>
+
+    <!-- ---- セッション記録 ---- -->
+    <section id="page-session">
+      <div class="card">
+        <h2>セッション・英会話の記録</h2>
+        <label for="sesDate">日付</label>
+        <input type="date" id="sesDate">
+        <label for="sesType">種類</label>
+        <select id="sesType">
+          <option>Zerostaセッション</option><option>オンライン英会話</option><option>対面英会話</option><option>その他</option>
+        </select>
+        <label for="sesWith">相手・サービス（任意）</label>
+        <input type="text" id="sesWith" placeholder="例: Ewan / DMM英会話">
+        <label for="sesNote">内容・気づき</label>
+        <textarea id="sesNote" placeholder="例: 過去形の言い間違いが多かった。次は準備した話題で臨む"></textarea>
+        <label for="sesPhrase">覚えたフレーズ（任意）</label>
+        <textarea id="sesPhrase" placeholder="例: It depends on the situation."></textarea>
+        <button class="primary" id="sesSaveBtn">記録する</button>
+      </div>
+      <div class="card">
+        <h2>これまでの記録</h2>
+        <div id="sesList"><p class="note">まだありません</p></div>
+      </div>
+    </section>
+
+    <nav id="mainNav" class="visible">
+      <button class="active" data-page="home"><span class="icon">🏠</span>ホーム</button>
+      <button data-page="chat"><span class="icon">🗣</span>AI会話</button>
+      <button data-page="diary"><span class="icon">📔</span>日記</button>
+      <button data-page="log"><span class="icon">⏱</span>ログ</button>
+      <button data-page="session"><span class="icon">🎓</span>セッション</button>
+    </nav>
+  </div>
+
+  <script>
+    /* ==========================================================
+       【1】設定値
+       ========================================================== */
+    // Firebase（ログインとデータ保存）。プロジェクト zerosta-app（2026-07-22作成、東京リージョン）
+    // これは「データ置き場の住所」で、公開されてよい設計のもの。守りはFirestoreルールが担う
+    const FIREBASE_CONFIG = {
+      apiKey: "AIzaSyDeHUCzQDCeUVd7-qH5a1MRBYvnlx-GNGk",
+      authDomain: "zerosta-app.firebaseapp.com",
+      projectId: "zerosta-app",
+      storageBucket: "zerosta-app.firebasestorage.app",
+      messagingSenderId: "730937170235",
+      appId: "1:730937170235:web:04a1f1daaf75a7a60f7f1e"
+    };
+
+    // AI（Gemini）。無料枠のAPIキー。null のあいだAI機能は「準備中」表示になる。
+    // 将来 Claude API 等へ差し替える場合は callAI() だけ書き換えればよい
+    const GEMINI_API_KEY = null;
+    const GEMINI_MODEL = "gemini-2.5-flash";
+
+    /* ==========================================================
+       【2】アプリの状態
+       ========================================================== */
+    let fb = null;           // Firebaseの道具箱（初期化後に入る）
+    let uid = null;          // ログイン中ユーザーのID
+    let unsubs = [];         // データ購読の解除関数たち（ログアウト時に呼ぶ）
+    const state = { diary: [], logs: [], sessions: [], chats: [] };
+
+    let signupMode = true;   // ログイン画面が「新規登録」か「ログイン」か
+    let chatMode = "talk";   // talk=英会話練習 / ask=質問・添削
+    let chatMsgs = [];       // 進行中の会話 [{role:"user"|"model", text}]
+    let chatStart = null;    // 会話開始時刻（学習ログ自動記録用）
+    let timerStart = null;   // タイマー開始時刻
+    let timerTick = null;    // タイマーの表示更新
+    let diaryFb = "";        // 直近のAI添削（保存時に日記へ添付）
+
+    /* ==========================================================
+       【3】小さな道具
+       ========================================================== */
+    const $ = (id) => document.getElementById(id);
+    function todayStr() {
+      const d = new Date();
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+    function jpDate(ymd) { return ymd ? ymd.replace(/-/g, "/") : ""; }
+    // 今週の月曜日("YYYY-MM-DD")を返す
+    function mondayStr() {
+      const d = new Date();
+      const day = (d.getDay() + 6) % 7; // 月曜=0
+      d.setDate(d.getDate() - day);
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    }
+
+    /* ==========================================================
+       【4】Firebase 初期化・ログイン
+       ========================================================== */
+    async function initFirebase() {
+      if (!FIREBASE_CONFIG) {
+        $("authError").textContent = "アプリの接続設定が未完了です（運営側の作業待ち）";
+        $("authBtn").disabled = true;
+        return;
+      }
+      const [appM, authM, fsM] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"),
+      ]);
+      const app = appM.initializeApp(FIREBASE_CONFIG);
+      fb = { auth: authM.getAuth(app), db: fsM.getFirestore(app), authM, fsM };
+
+      // ログイン状態が変わるたびに呼ばれる（起動時にも1回呼ばれる）
+      authM.onAuthStateChanged(fb.auth, (user) => {
+        if (user) {
+          uid = user.uid;
+          $("whoami").textContent = (user.displayName || "生徒") + " さん";
+          $("accountInfo").textContent = "ログイン中: " + (user.email || "");
+          $("authView").style.display = "none";
+          $("appView").style.display = "block";
+          startSubscriptions();
+        } else {
+          uid = null;
+          unsubs.forEach(u => u()); unsubs = [];
+          $("authView").style.display = "block";
+          $("appView").style.display = "none";
+        }
+      });
+    }
+
+    // 登録 or ログインボタン
+    async function doAuth() {
+      const email = $("authEmail").value.trim();
+      const pass = $("authPass").value;
+      const name = $("authName").value.trim();
+      $("authError").textContent = "";
+      try {
+        if (signupMode) {
+          if (!name) { $("authError").textContent = "名前を入れてください"; return; }
+          const cred = await fb.authM.createUserWithEmailAndPassword(fb.auth, email, pass);
+          await fb.authM.updateProfile(cred.user, { displayName: name });
+          // プロフィールを保存（コーチが後で一覧するときの土台）
+          await fb.fsM.setDoc(fb.fsM.doc(fb.db, "users", cred.user.uid), {
+            name: name, email: email, createdAt: new Date().toISOString()
+          });
+          $("whoami").textContent = name + " さん";
+        } else {
+          await fb.authM.signInWithEmailAndPassword(fb.auth, email, pass);
+        }
+      } catch (err) {
+        const m = {
+          "auth/email-already-in-use": "このメールは登録済みです。下の「ログイン」に切り替えてください",
+          "auth/invalid-email": "メールアドレスの形式が正しくありません",
+          "auth/weak-password": "パスワードは6文字以上にしてください",
+          "auth/invalid-credential": "メールまたはパスワードが違います",
+          "auth/user-not-found": "このメールは未登録です",
+          "auth/wrong-password": "パスワードが違います",
+        };
+        $("authError").textContent = m[err.code] || ("エラー: " + err.message);
+      }
+    }
+
+    /* ==========================================================
+       【5】データの購読（Firestore → 画面へ自動反映）
+       ========================================================== */
+    function startSubscriptions() {
+      const { fsM, db } = fb;
+      unsubs.forEach(u => u()); unsubs = [];
+      const watch = (coll, orderField, into) => {
+        const q = fsM.query(
+          fsM.collection(db, "users", uid, coll),
+          fsM.orderBy(orderField, "desc"),
+          fsM.limit(200)
+        );
+        unsubs.push(fsM.onSnapshot(q, (snap) => {
+          state[into] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          renderAll();
+        }, (err) => console.log(coll, err.message)));
+      };
+      watch("diary", "date", "diary");
+      watch("logs", "date", "logs");
+      watch("sessions", "date", "sessions");
+      watch("chats", "startedAt", "chats");
+    }
+    async function addTo(coll, data) {
+      return fb.fsM.addDoc(fb.fsM.collection(fb.db, "users", uid, coll), data);
+    }
+    async function removeFrom(coll, id) {
+      return fb.fsM.deleteDoc(fb.fsM.doc(fb.db, "users", uid, coll, id));
+    }
+
+    /* ==========================================================
+       【6】AI呼び出し（ここだけ差し替えれば別のAIに移行できる）
+       ========================================================== */
+    async function callAI(systemText, messages) {
+      const url = "https://generativelanguage.googleapis.com/v1beta/models/" + GEMINI_MODEL + ":generateContent?key=" + GEMINI_API_KEY;
+      const body = {
+        system_instruction: { parts: [{ text: systemText }] },
+        contents: messages.map(m => ({ role: m.role === "user" ? "user" : "model", parts: [{ text: m.text }] })),
+        generationConfig: { maxOutputTokens: 1024, temperature: 0.7 }
+      };
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+      const text = data.candidates && data.candidates[0] && data.candidates[0].content
+        && data.candidates[0].content.parts.map(p => p.text).join("");
+      if (!text) throw new Error("AIから返答が取れませんでした");
+      return text.trim();
+    }
+
+    const SYS_TALK = "You are a friendly English conversation partner in the Zerosta English coaching program, talking with a Japanese learner. Keep each reply short (2-4 sentences), natural and encouraging, and end with a simple question to keep the conversation going. Match the learner's level. If the learner makes an error worth fixing, append one brief correction at the very end on a new line in this format: 💡 <wrong> → <better>. At most one correction per reply.";
+    const SYS_ASK = "あなたはZerosta（英語コーチング）のアシスタントです。日本人の英語学習者からの質問に、日本語で簡潔に答えてください。英文の添削を頼まれたら、(1)訂正版 (2)直した理由を短く (3)より自然な言い方、の順で示してください。断定できないことは推測と明示してください。";
+
+    /* ==========================================================
+       【7】画面の描画
+       ========================================================== */
+    function renderAll() { renderHome(); renderDiary(); renderLogs(); renderSessions(); renderChats(); }
+
+    function renderHome() {
+      const today = todayStr();
+      const monday = mondayStr();
+      $("todayTitle").textContent = "今日 " + jpDate(today);
+
+      const todayMin = state.logs.filter(l => l.date === today).reduce((s, l) => s + (l.minutes || 0), 0);
+      const weekLogs = state.logs.filter(l => l.date >= monday);
+      const weekMin = weekLogs.reduce((s, l) => s + (l.minutes || 0), 0);
+      $("statToday").textContent = todayMin + "分";
+      $("statWeek").textContent = weekMin + "分";
+
+      // 連続学習日数: ログ・日記・セッションのどれかがある日をつなげて数える（今日はまだ無くてもセーフ）
+      const days = new Set();
+      state.logs.forEach(l => days.add(l.date));
+      state.diary.forEach(d => days.add(d.date));
+      state.sessions.forEach(s => days.add(s.date));
+      let streak = 0;
+      const cur = new Date();
+      if (!days.has(today)) cur.setDate(cur.getDate() - 1); // 今日まだなら昨日から数える
+      for (;;) {
+        const key = cur.getFullYear() + "-" + String(cur.getMonth() + 1).padStart(2, "0") + "-" + String(cur.getDate()).padStart(2, "0");
+        if (days.has(key)) { streak++; cur.setDate(cur.getDate() - 1); } else break;
+      }
+      $("statStreak").textContent = streak + "日";
+
+      // 今週のカテゴリ別内訳バー
+      const byCat = {};
+      weekLogs.forEach(l => { byCat[l.category || "その他"] = (byCat[l.category || "その他"] || 0) + (l.minutes || 0); });
+      const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+      if (cats.length === 0) {
+        $("weekBars").innerHTML = '<p class="note">まだ記録がありません</p>';
+      } else {
+        const max = cats[0][1];
+        $("weekBars").innerHTML = cats.map(([name, min]) => `
+          <div class="bar-line">
+            <span class="name">${escapeHtml(name)}</span>
+            <div class="bar"><div style="width:${Math.round(min / max * 100)}%"></div></div>
+            <span class="min">${min}分</span>
+          </div>`).join("");
+      }
+    }
+
+    function renderDiary() {
+      const el = $("diaryList");
+      if (state.diary.length === 0) { el.innerHTML = '<p class="note">まだありません</p>'; return; }
+      el.innerHTML = state.diary.map(d => `
+        <div class="item">
+          <div class="top"><span class="date">${jpDate(d.date)}</span>
+            <button class="del" data-coll="diary" data-id="${d.id}">削除</button></div>
+          <div class="body">${escapeHtml(d.text)}</div>
+          ${d.feedback ? `<details><summary>AI添削を見る</summary><div class="fb">${escapeHtml(d.feedback)}</div></details>` : ""}
+        </div>`).join("");
+    }
+
+    function renderLogs() {
+      const el = $("logList");
+      if (state.logs.length === 0) { el.innerHTML = '<p class="note">まだありません</p>'; return; }
+      el.innerHTML = state.logs.slice(0, 30).map(l => `
+        <div class="item">
+          <div class="top">
+            <span><span class="tag">${escapeHtml(l.category || "その他")}</span>
+              <b style="font-size:14px;"> ${l.minutes || 0}分</b>
+              <span class="date"> ${jpDate(l.date)}</span></span>
+            <button class="del" data-coll="logs" data-id="${l.id}">削除</button>
+          </div>
+          ${l.note ? `<div class="body">${escapeHtml(l.note)}</div>` : ""}
+        </div>`).join("");
+    }
+
+    function renderSessions() {
+      const el = $("sesList");
+      if (state.sessions.length === 0) { el.innerHTML = '<p class="note">まだありません</p>'; return; }
+      el.innerHTML = state.sessions.map(s => `
+        <div class="item">
+          <div class="top">
+            <span><span class="tag">${escapeHtml(s.type || "")}</span>
+              <span class="date"> ${jpDate(s.date)}${s.partner ? " ・ " + escapeHtml(s.partner) : ""}</span></span>
+            <button class="del" data-coll="sessions" data-id="${s.id}">削除</button>
+          </div>
+          ${s.note ? `<div class="body">${escapeHtml(s.note)}</div>` : ""}
+          ${s.phrases ? `<div class="fb">📌 ${escapeHtml(s.phrases)}</div>` : ""}
+        </div>`).join("");
+    }
+
+    function renderChats() {
+      const el = $("chatList");
+      if (state.chats.length === 0) { el.innerHTML = '<p class="note">まだありません</p>'; return; }
+      el.innerHTML = state.chats.slice(0, 10).map(c => `
+        <div class="item">
+          <div class="top">
+            <span><span class="tag">${c.mode === "talk" ? "英会話練習" : "質問・添削"}</span>
+              <span class="date"> ${jpDate((c.startedAt || "").slice(0, 10))} ・ ${(c.messages || []).length}メッセージ</span></span>
+            <button class="del" data-coll="chats" data-id="${c.id}">削除</button>
+          </div>
+          <details><summary>会話を見る</summary>
+            <div class="body">${(c.messages || []).map(m => (m.role === "user" ? "🧑 " : "🤖 ") + escapeHtml(m.text)).join("\n\n")}</div>
+          </details>
+        </div>`).join("");
+    }
+
+    /* ==========================================================
+       【8】チャットまわり
+       ========================================================== */
+    function drawChat(thinking) {
+      const box = $("chatBox");
+      box.innerHTML = chatMsgs.map(m => `<div class="bubble ${m.role}">${escapeHtml(m.text)}</div>`).join("")
+        + (thinking ? '<div class="bubble thinking">考え中...</div>' : "");
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function sendChat() {
+      const input = $("chatInput");
+      const text = input.value.trim();
+      if (!text || !GEMINI_API_KEY) return;
+      input.value = "";
+      if (chatMsgs.length === 0) chatStart = Date.now();
+      chatMsgs.push({ role: "user", text });
+      drawChat(true);
+      $("chatSend").disabled = true;
+      try {
+        const reply = await callAI(chatMode === "talk" ? SYS_TALK : SYS_ASK, chatMsgs);
+        chatMsgs.push({ role: "model", text: reply });
+      } catch (err) {
+        chatMsgs.push({ role: "model", text: "（エラー: " + err.message + "）" });
+      }
+      $("chatSend").disabled = false;
+      drawChat(false);
+    }
+
+    async function endChat() {
+      if (chatMsgs.length === 0) return;
+      const minutes = Math.max(1, Math.round((Date.now() - chatStart) / 60000));
+      const turns = chatMsgs.filter(m => m.role === "user").length;
+      await addTo("chats", { startedAt: new Date().toISOString(), mode: chatMode, messages: chatMsgs });
+      await addTo("logs", {
+        date: todayStr(), minutes: minutes, category: "AI会話",
+        note: (chatMode === "talk" ? "英会話練習" : "質問・添削") + " " + turns + "往復",
+        createdAt: new Date().toISOString()
+      });
+      chatMsgs = []; chatStart = null;
+      drawChat(false);
+      alert("会話を保存し、学習ログに " + minutes + "分 を記録しました");
+    }
+
+    /* ==========================================================
+       【9】操作（イベント）
+       ========================================================== */
+    // タブ切り替え
+    function goPage(name) {
+      document.querySelectorAll("section").forEach(s => s.classList.remove("active"));
+      $("page-" + name).classList.add("active");
+      document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b.dataset.page === name));
+    }
+    document.querySelectorAll("nav button").forEach(btn => btn.addEventListener("click", () => goPage(btn.dataset.page)));
+    document.querySelectorAll("[data-go]").forEach(btn => btn.addEventListener("click", () => goPage(btn.dataset.go)));
+
+    // ログイン画面
+    $("authBtn").addEventListener("click", doAuth);
+    $("authToggle").addEventListener("click", () => {
+      signupMode = !signupMode;
+      $("signupOnly").style.display = signupMode ? "block" : "none";
+      $("authBtn").textContent = signupMode ? "新規登録" : "ログイン";
+      $("authToggle").textContent = signupMode ? "アカウントを持っている人はこちら（ログイン）" : "はじめての人はこちら（新規登録）";
+      $("authError").textContent = "";
+    });
+    $("logoutBtn").addEventListener("click", () => fb.authM.signOut(fb.auth));
+
+    // チャット
+    $("modeTalk").addEventListener("click", () => { chatMode = "talk"; $("modeTalk").classList.add("on"); $("modeAsk").classList.remove("on"); $("chatInput").placeholder = "英語で話しかけてみよう"; });
+    $("modeAsk").addEventListener("click", () => { chatMode = "ask"; $("modeAsk").classList.add("on"); $("modeTalk").classList.remove("on"); $("chatInput").placeholder = "質問や添削してほしい英文をどうぞ（日本語OK）"; });
+    $("chatSend").addEventListener("click", sendChat);
+    $("chatEnd").addEventListener("click", endChat);
+
+    // 日記
+    $("diaryAiBtn").addEventListener("click", async () => {
+      const text = $("diaryText").value.trim();
+      if (!text) { alert("先に日記を書いてください"); return; }
+      if (!GEMINI_API_KEY) { alert("AI機能は準備中です（運営側の設定待ち）"); return; }
+      $("diaryAiBtn").disabled = true; $("diaryAiBtn").textContent = "添削中...";
+      try {
+        const fbText = await callAI(
+          "あなたはZerostaの英語コーチのアシスタントです。学習者の英語日記に対して、(1)大事な訂正だけ最大5つ（誤→正と短い日本語説明）、(2)自然な英語での書き直し全文、(3)英語でひとこと励まし、を簡潔に出力してください。",
+          [{ role: "user", text: text }]
+        );
+        diaryFb = fbText;
+        $("diaryFeedback").textContent = fbText;
+        $("diaryFeedback").style.display = "block";
+      } catch (err) { alert("添削に失敗しました: " + err.message); }
+      $("diaryAiBtn").disabled = false; $("diaryAiBtn").textContent = "🤖 AIに添削してもらう";
+    });
+
+    $("diarySaveBtn").addEventListener("click", async () => {
+      const text = $("diaryText").value.trim();
+      const date = $("diaryDate").value;
+      if (!text) { alert("日記を書いてください"); return; }
+      if (!date) { alert("日付を入れてください"); return; }
+      await addTo("diary", { date, text, feedback: diaryFb || "", createdAt: new Date().toISOString() });
+      $("diaryText").value = ""; diaryFb = "";
+      $("diaryFeedback").style.display = "none"; $("diaryFeedback").textContent = "";
+      alert("日記を保存しました");
+    });
+
+    // タイマー
+    $("timerBtn").addEventListener("click", () => {
+      if (!timerStart) {
+        timerStart = Date.now();
+        $("timerBtn").textContent = "ストップして記録へ";
+        $("timerDisplay").classList.add("running");
+        timerTick = setInterval(() => {
+          const s = Math.floor((Date.now() - timerStart) / 1000);
+          $("timerDisplay").textContent = String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+        }, 1000);
+      } else {
+        clearInterval(timerTick);
+        const minutes = Math.max(1, Math.round((Date.now() - timerStart) / 60000));
+        timerStart = null;
+        $("timerBtn").textContent = "スタート";
+        $("timerDisplay").classList.remove("running");
+        $("timerDisplay").textContent = "00:00";
+        // 計った結果を手入力フォームに流し込む（内容メモを足して「記録する」を押してもらう）
+        $("logDate").value = todayStr();
+        $("logMin").value = minutes;
+        $("logCat").value = $("timerCat").value;
+        $("logNote").focus();
+        alert(minutes + "分 計測しました。内容メモを書いて「記録する」を押してください");
+      }
+    });
+
+    // 学習ログ手入力
+    $("logSaveBtn").addEventListener("click", async () => {
+      const date = $("logDate").value;
+      const minutes = Number($("logMin").value);
+      if (!date) { alert("日付を入れてください"); return; }
+      if (!minutes || minutes <= 0) { alert("時間（分）を1以上で入れてください"); return; }
+      await addTo("logs", {
+        date, minutes, category: $("logCat").value,
+        note: $("logNote").value.trim(), createdAt: new Date().toISOString()
+      });
+      $("logMin").value = ""; $("logNote").value = "";
+      alert("記録しました");
+    });
+
+    // セッション記録
+    $("sesSaveBtn").addEventListener("click", async () => {
+      const date = $("sesDate").value;
+      const note = $("sesNote").value.trim();
+      if (!date) { alert("日付を入れてください"); return; }
+      if (!note) { alert("内容・気づきを書いてください"); return; }
+      await addTo("sessions", {
+        date, type: $("sesType").value, partner: $("sesWith").value.trim(),
+        note, phrases: $("sesPhrase").value.trim(), createdAt: new Date().toISOString()
+      });
+      $("sesNote").value = ""; $("sesPhrase").value = ""; $("sesWith").value = "";
+      alert("記録しました");
+    });
+
+    // 一覧の削除ボタン（各一覧の親でまとめて聞く）
+    ["diaryList", "logList", "sesList", "chatList"].forEach(listId => {
+      $(listId).addEventListener("click", (e) => {
+        if (!e.target.classList.contains("del")) return;
+        if (!confirm("この記録を削除しますか？")) return;
+        removeFrom(e.target.dataset.coll, e.target.dataset.id);
+      });
+    });
+
+    /* ==========================================================
+       【10】起動
+       ========================================================== */
+    $("diaryDate").value = todayStr();
+    $("logDate").value = todayStr();
+    $("sesDate").value = todayStr();
+    if (!GEMINI_API_KEY) { $("aiNotice").style.display = "block"; $("chatSend").disabled = true; }
+    initFirebase();
+  </script>
+</body>
+</html>
