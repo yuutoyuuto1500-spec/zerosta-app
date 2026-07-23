@@ -2,17 +2,14 @@
 <html lang="ja">
 <!--
   ============================================================
-  ゼロスタ学習ノート v1
+  ゼロスタ学習ノート v1.1
   ============================================================
   Zerosta の生徒用学習アプリ。
-  - ログイン（メール＋パスワード、Firebase認証）
-  - AI会話（英会話練習 / 質問・添削。Gemini API）
-  - 英語日記（AI添削つき）
-  - 学習ログ（タイマー計測＋手入力、週間集計、連続日数）
-  - セッション記録（Zerostaセッション・オンライン英会話）
-
-  データはすべて Firestore の users/{自分のID}/ 以下に保存され、
-  ルールにより本人以外は読み書きできない。
+  v1.1: UI/UX刷新（DESIGN-NOTES.md の調査に基づく）
+  - 進捗リング（今日の学習 vs 目標）、連続日数🔥、直近7日ドット
+  - ダークモード対応、カテゴリ絵文字、会話・日記の入口チップ
+  機能: ログイン / AI会話 / 英語日記(AI添削) / 学習ログ / セッション記録
+  データは Firestore users/{自分のID}/ 以下。本人以外読み書き不可。
   ============================================================
 -->
 <head>
@@ -22,20 +19,32 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="ゼロスタ">
-  <meta name="theme-color" content="#4f46e5">
+  <meta name="theme-color" content="#5b5bd6">
 
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     :root {
-      --bg: #f4f5f7; --card: #ffffff; --text: #1c1c1e; --sub: #6e6e73;
-      --accent: #4f46e5;      /* テーマ色（インディゴ） */
-      --accent-soft: #eef0fe;
-      --green: #30a14e; --red: #d0342c; --line: #e5e5ea;
+      --bg: #f3f4f8; --card: #ffffff; --text: #1b1b22; --sub: #71717a;
+      --accent: #5b5bd6; --accent2: #8b5cf6;
+      --accent-soft: #eceafd; --accent-text: #4f46b8;
+      --green: #22a06b; --green-soft: #e5f6ee;
+      --red: #d0342c; --line: #e6e6ee;
+      --shadow: 0 2px 10px rgba(40, 40, 90, 0.06);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121218; --card: #1d1d26; --text: #f0f0f4; --sub: #9b9ba6;
+        --accent: #7c7cf0; --accent2: #a78bfa;
+        --accent-soft: #2a2a44; --accent-text: #b9b9fb;
+        --green: #34c98a; --green-soft: #16362a;
+        --red: #ff6b61; --line: #33333f;
+        --shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+      }
     }
     body {
       font-family: -apple-system, "Hiragino Sans", sans-serif;
       background: var(--bg); color: var(--text);
-      padding-bottom: 76px;
+      padding-bottom: 84px;
     }
     header {
       background: var(--card); padding: 14px 16px 10px;
@@ -43,95 +52,163 @@
       position: sticky; top: 0; z-index: 5;
       display: flex; justify-content: space-between; align-items: baseline;
     }
-    header h1 { font-size: 17px; color: var(--accent); }
+    header h1 {
+      font-size: 17px; font-weight: 700;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
     header .who { font-size: 12px; color: var(--sub); }
 
-    section { padding: 16px; display: none; }
+    section { padding: 16px; display: none; max-width: 680px; margin: 0 auto; }
     section.active { display: block; }
 
     .card {
-      background: var(--card); border-radius: 14px; padding: 16px;
-      margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      background: var(--card); border-radius: 18px; padding: 16px;
+      margin-bottom: 14px; box-shadow: var(--shadow);
     }
     .card h2 { font-size: 13px; color: var(--sub); font-weight: 600; margin-bottom: 10px; }
 
     label { display: block; font-size: 13px; color: var(--sub); margin: 10px 0 4px; }
     input, textarea, select {
-      width: 100%; font-size: 16px; padding: 10px;
-      border: 1px solid var(--line); border-radius: 10px; background: #fafafa;
-      font-family: inherit;
+      width: 100%; font-size: 16px; padding: 11px;
+      border: 1.5px solid var(--line); border-radius: 12px;
+      background: var(--bg); color: var(--text); font-family: inherit;
     }
+    input:focus, textarea:focus { outline: none; border-color: var(--accent); }
     textarea { min-height: 90px; resize: vertical; }
+    button { font-family: inherit; cursor: pointer; }
     button.primary {
-      width: 100%; margin-top: 14px; padding: 13px; font-size: 16px; font-weight: 600;
-      color: #fff; background: var(--accent); border: none; border-radius: 12px;
+      width: 100%; margin-top: 14px; padding: 13px; font-size: 16px; font-weight: 700;
+      color: #fff; background: linear-gradient(90deg, var(--accent), var(--accent2));
+      border: none; border-radius: 14px; transition: transform .08s, opacity .15s;
     }
-    button.primary:active { opacity: 0.7; }
+    button.primary:active { transform: scale(0.98); opacity: 0.85; }
     button.primary:disabled { opacity: 0.4; }
     button.ghost {
-      width: 100%; margin-top: 10px; padding: 11px; font-size: 14px;
-      color: var(--accent); background: var(--accent-soft); border: none; border-radius: 12px; font-weight: 600;
+      width: 100%; margin-top: 10px; padding: 12px; font-size: 14px;
+      color: var(--accent-text); background: var(--accent-soft);
+      border: none; border-radius: 14px; font-weight: 600; text-align: left;
+      transition: transform .08s;
     }
+    button.ghost:active { transform: scale(0.98); }
     .error { color: var(--red); font-size: 13px; margin-top: 10px; min-height: 1em; }
     .note { font-size: 12px; color: var(--sub); line-height: 1.7; }
 
-    /* ---- ログイン画面 ---- */
-    #authView { max-width: 420px; margin: 0 auto; padding: 40px 16px; }
+    /* ---- ログイン ---- */
+    #authView { max-width: 420px; margin: 0 auto; padding: 44px 16px; }
     #authView .logo { text-align: center; margin-bottom: 24px; }
-    #authView .logo .mark { font-size: 40px; }
-    #authView .logo h1 { font-size: 22px; color: var(--accent); margin-top: 6px; }
+    #authView .logo .mark { font-size: 44px; }
+    #authView .logo h1 {
+      font-size: 24px; margin-top: 6px; font-weight: 800;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
     #authView .logo p { font-size: 13px; color: var(--sub); margin-top: 4px; }
-    .linkish { color: var(--accent); font-size: 13px; text-align: center; margin-top: 14px; text-decoration: underline; cursor: pointer; }
+    .linkish { color: var(--accent-text); font-size: 13px; text-align: center; margin-top: 14px; text-decoration: underline; cursor: pointer; }
 
-    /* ---- ホームの数字 ---- */
-    .stat-row { display: flex; gap: 10px; }
-    .stat { flex: 1; background: var(--accent-soft); border-radius: 12px; padding: 12px; text-align: center; }
-    .stat .num { font-size: 22px; font-weight: 700; color: var(--accent); }
-    .stat .cap { font-size: 11px; color: var(--sub); margin-top: 2px; }
-    .bar-line { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; }
-    .bar-line .name { width: 70px; color: var(--sub); }
+    /* ---- ホーム: あいさつ ---- */
+    .greet { padding: 4px 4px 12px; }
+    .greet .hello { font-size: 20px; font-weight: 700; }
+    .greet .date { font-size: 13px; color: var(--sub); margin-top: 2px; }
+
+    /* ---- ホーム: リング＋ストリーク ---- */
+    .hero { display: flex; align-items: center; gap: 18px; }
+    .ring { position: relative; width: 128px; height: 128px; flex-shrink: 0; }
+    .ring .track {
+      width: 100%; height: 100%; border-radius: 50%;
+      background: conic-gradient(var(--accent) 0%, var(--line) 0);
+      transition: background .4s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .ring .hole {
+      width: 96px; height: 96px; border-radius: 50%; background: var(--card);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .ring .val { font-size: 26px; font-weight: 800; line-height: 1; }
+    .ring .cap { font-size: 11px; color: var(--sub); margin-top: 3px; }
+    .hero .side { flex: 1; }
+    .hero .streak { font-size: 15px; font-weight: 700; }
+    .hero .streak b { font-size: 26px; }
+    .hero .weektotal { font-size: 13px; color: var(--sub); margin-top: 4px; }
+    .goal-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--sub); }
+    .goal-row select { width: auto; font-size: 13px; padding: 4px 8px; border-radius: 8px; }
+    .goal-done { color: var(--green); font-weight: 700; font-size: 13px; margin-top: 8px; display: none; }
+
+    /* ---- 7日ドット ---- */
+    .dots { display: flex; justify-content: space-between; margin-top: 4px; }
+    .dot { text-align: center; flex: 1; }
+    .dot .c {
+      width: 30px; height: 30px; border-radius: 50%; margin: 0 auto;
+      background: var(--line); display: flex; align-items: center; justify-content: center;
+      font-size: 13px; color: var(--sub);
+    }
+    .dot.on .c { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; font-weight: 700; }
+    .dot.today .c { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--accent); }
+    .dot .d { font-size: 10px; color: var(--sub); margin-top: 5px; }
+
+    /* ---- 内訳バー ---- */
+    .bar-line { display: flex; align-items: center; gap: 8px; margin-top: 9px; font-size: 12px; }
+    .bar-line .name { width: 108px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .bar-line .bar { flex: 1; height: 10px; background: var(--line); border-radius: 5px; overflow: hidden; }
-    .bar-line .bar > div { height: 100%; background: var(--accent); border-radius: 5px; }
+    .bar-line .bar > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 5px; transition: width .4s; }
     .bar-line .min { width: 48px; text-align: right; color: var(--sub); }
 
     /* ---- チャット ---- */
     #chatBox {
       display: flex; flex-direction: column; gap: 8px;
-      min-height: 200px; max-height: 45vh; overflow-y: auto;
+      min-height: 180px; max-height: 45vh; overflow-y: auto;
       padding: 4px 2px; margin-bottom: 10px;
     }
     .bubble {
-      max-width: 85%; padding: 10px 12px; border-radius: 14px;
+      max-width: 85%; padding: 10px 13px; border-radius: 16px;
       font-size: 15px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+      animation: pop .18s ease-out;
     }
-    .bubble.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
-    .bubble.model { align-self: flex-start; background: #ececf1; border-bottom-left-radius: 4px; }
-    .bubble.thinking { align-self: flex-start; color: var(--sub); background: none; font-size: 13px; }
+    @keyframes pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .bubble.user { align-self: flex-end; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border-bottom-right-radius: 5px; }
+    .bubble.model { align-self: flex-start; background: var(--accent-soft); color: var(--text); border-bottom-left-radius: 5px; }
+    .typing { align-self: flex-start; display: flex; gap: 4px; padding: 12px 14px; background: var(--accent-soft); border-radius: 16px; border-bottom-left-radius: 5px; }
+    .typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--sub); animation: blink 1.2s infinite; }
+    .typing span:nth-child(2) { animation-delay: .2s; }
+    .typing span:nth-child(3) { animation-delay: .4s; }
+    @keyframes blink { 0%, 60%, 100% { opacity: .3; } 30% { opacity: 1; } }
     .chat-input-row { display: flex; gap: 8px; }
-    .chat-input-row textarea { min-height: 44px; max-height: 120px; flex: 1; }
+    .chat-input-row textarea { min-height: 46px; max-height: 120px; flex: 1; }
     .chat-input-row button {
-      width: 74px; border: none; border-radius: 12px; background: var(--accent);
-      color: #fff; font-weight: 600; font-size: 14px;
+      width: 76px; border: none; border-radius: 13px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff; font-weight: 700; font-size: 14px;
     }
     .mode-row { display: flex; gap: 8px; margin-bottom: 10px; }
     .mode-btn {
-      flex: 1; padding: 9px; font-size: 13px; font-weight: 600;
-      border: 1px solid var(--line); border-radius: 10px; background: #fafafa; color: var(--sub);
+      flex: 1; padding: 10px; font-size: 13px; font-weight: 600;
+      border: 1.5px solid var(--line); border-radius: 12px; background: var(--card); color: var(--sub);
     }
-    .mode-btn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+    .mode-btn.on { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent); }
 
-    /* ---- 一覧の1行 ---- */
-    .item { padding: 10px 0; border-bottom: 1px solid var(--line); }
+    /* ---- チップ（入口の提案） ---- */
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .chip {
+      font-size: 13px; padding: 8px 12px; border-radius: 99px;
+      background: var(--card); border: 1.5px solid var(--line); color: var(--text);
+      transition: transform .08s;
+    }
+    .chip:active { transform: scale(0.96); }
+
+    /* ---- 一覧 ---- */
+    .item { padding: 11px 0; border-bottom: 1px solid var(--line); }
     .item:last-child { border-bottom: none; }
     .item .top { display: flex; justify-content: space-between; align-items: center; }
     .item .date { font-size: 12px; color: var(--sub); }
     .item .body { font-size: 14px; line-height: 1.6; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
-    .item .fb { font-size: 13px; line-height: 1.6; margin-top: 6px; padding: 8px 10px; background: var(--accent-soft); border-radius: 10px; white-space: pre-wrap; }
+    .item .fb { font-size: 13px; line-height: 1.6; margin-top: 6px; padding: 9px 11px; background: var(--accent-soft); border-radius: 12px; white-space: pre-wrap; }
     .item .del { background: none; border: none; color: var(--red); font-size: 12px; padding: 4px 6px; }
-    .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
+    .tag { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 99px; background: var(--accent-soft); color: var(--accent-text); }
+    .empty { text-align: center; color: var(--sub); font-size: 13px; padding: 18px 0; line-height: 1.8; }
+    .empty .big { font-size: 30px; }
 
     /* ---- タイマー ---- */
-    #timerDisplay { font-size: 44px; font-weight: 700; text-align: center; letter-spacing: 1px; margin: 8px 0; font-variant-numeric: tabular-nums; }
+    #timerDisplay { font-size: 48px; font-weight: 800; text-align: center; letter-spacing: 1px; margin: 10px 0; font-variant-numeric: tabular-nums; }
     #timerDisplay.running { color: var(--accent); }
 
     /* ---- 下タブ ---- */
@@ -142,14 +219,15 @@
     }
     nav.visible { display: flex; }
     nav button { flex: 1; padding: 9px 0 7px; background: none; border: none; font-size: 10px; color: var(--sub); }
-    nav button .icon { display: block; font-size: 19px; margin-bottom: 2px; }
-    nav button.active { color: var(--accent); font-weight: 600; }
+    nav button .icon { display: block; font-size: 20px; margin-bottom: 3px; transition: transform .12s; }
+    nav button.active { color: var(--accent-text); font-weight: 700; }
+    nav button.active .icon { transform: translateY(-2px) scale(1.12); }
     details summary { cursor: pointer; font-size: 13px; color: var(--sub); }
   </style>
 </head>
 
 <body>
-  <!-- ======== ログイン画面（未ログイン時のみ表示） ======== -->
+  <!-- ======== ログイン画面 ======== -->
   <div id="authView">
     <div class="logo">
       <div class="mark">🚀</div>
@@ -172,7 +250,7 @@
     <p class="note" style="text-align:center;">アカウント情報と学習記録は本人だけが見られます。</p>
   </div>
 
-  <!-- ======== アプリ本体（ログイン後に表示） ======== -->
+  <!-- ======== アプリ本体 ======== -->
   <div id="appView" style="display:none;">
     <header>
       <h1>ゼロスタ学習ノート</h1>
@@ -181,24 +259,53 @@
 
     <!-- ---- ホーム ---- -->
     <section id="page-home" class="active">
+      <div class="greet">
+        <div class="hello" id="greetText">こんにちは</div>
+        <div class="date" id="todayTitle"></div>
+      </div>
+
       <div class="card">
-        <h2 id="todayTitle">今日</h2>
-        <div class="stat-row">
-          <div class="stat"><div class="num" id="statToday">0分</div><div class="cap">今日の学習</div></div>
-          <div class="stat"><div class="num" id="statWeek">0分</div><div class="cap">今週の合計</div></div>
-          <div class="stat"><div class="num" id="statStreak">0日</div><div class="cap">連続学習 🔥</div></div>
+        <div class="hero">
+          <div class="ring">
+            <div class="track" id="ringTrack">
+              <div class="hole">
+                <div class="val" id="ringVal">0</div>
+                <div class="cap" id="ringCap">/ 30分</div>
+              </div>
+            </div>
+          </div>
+          <div class="side">
+            <div class="streak">🔥 連続 <b id="statStreak">0</b> 日</div>
+            <div class="weektotal">今週合計 <span id="statWeek">0分</span></div>
+            <div class="goal-row">
+              <span>1日の目標</span>
+              <select id="goalSelect">
+                <option value="15">15分</option><option value="30">30分</option>
+                <option value="45">45分</option><option value="60">60分</option>
+              </select>
+            </div>
+            <div class="goal-done" id="goalDone">🎉 今日の目標達成！</div>
+          </div>
         </div>
       </div>
+
+      <div class="card">
+        <h2>この7日間</h2>
+        <div class="dots" id="weekDots"></div>
+      </div>
+
       <div class="card">
         <h2>今週の内訳</h2>
         <div id="weekBars"><p class="note">まだ記録がありません</p></div>
       </div>
+
       <div class="card">
         <h2>クイックスタート</h2>
         <button class="ghost" data-go="chat">🗣 AIと英語で話す</button>
         <button class="ghost" data-go="diary">📔 今日の英語日記を書く</button>
         <button class="ghost" data-go="log">⏱ 学習タイマーを回す</button>
       </div>
+
       <div class="card">
         <h2>アカウント</h2>
         <p class="note" id="accountInfo"></p>
@@ -218,11 +325,12 @@
           <button class="mode-btn" id="modeAsk">❓ 質問・添削</button>
         </div>
         <div id="chatBox"></div>
+        <div class="chips" id="chatChips"></div>
         <div class="chat-input-row">
           <textarea id="chatInput" placeholder="英語で話しかけてみよう"></textarea>
           <button id="chatSend">送信</button>
         </div>
-        <button class="ghost" id="chatEnd">会話を終了して記録する</button>
+        <button class="ghost" id="chatEnd" style="text-align:center;">会話を終了して記録する</button>
         <p class="note" style="margin-top:8px;">終了すると会話が保存され、時間が学習ログに自動で足されます。</p>
       </div>
       <div class="card">
@@ -235,12 +343,13 @@
     <section id="page-diary">
       <div class="card">
         <h2>英語日記を書く</h2>
+        <div class="chips" id="diaryChips"></div>
         <label for="diaryDate">日付</label>
         <input type="date" id="diaryDate">
         <label for="diaryText">今日の日記（英語で。1〜3文でもOK）</label>
         <textarea id="diaryText" placeholder="Today I ..."></textarea>
         <div id="diaryFeedback" class="fb" style="display:none;"></div>
-        <button class="ghost" id="diaryAiBtn">🤖 AIに添削してもらう</button>
+        <button class="ghost" id="diaryAiBtn" style="text-align:center;">🤖 AIに添削してもらう</button>
         <button class="primary" id="diarySaveBtn">日記を保存</button>
       </div>
       <div class="card">
@@ -335,41 +444,58 @@
     const GEMINI_API_KEY = null;
     const GEMINI_MODEL = "gemini-2.5-flash";
 
+    // カテゴリの絵文字（見分けを速くするための色分けの代わり）
+    const CAT_EMOJI = { "AI会話": "🗣", "シャドーイング": "🎧", "単語": "📚", "日記": "📔", "オンライン英会話": "💻", "その他": "✏️" };
+    const catLabel = (c) => (CAT_EMOJI[c] || "✏️") + " " + c;
+
+    // 会話の入口チップ（白紙から始めなくてよいように）
+    const TALK_CHIPS = ["Hi! Can we talk about my day?", "Let's talk about food!", "Please ask me some questions!"];
+    const ASK_CHIPS = ["この英文を添削して: ", "「久しぶり」って英語で何て言う？", "現在完了と過去形の違いを教えて"];
+    // 日記のお題チップ（書き出しの文をくれる）
+    const DIARY_STARTERS = [
+      ["🍜 今日の食事", "Today I ate "],
+      ["😊 うれしかったこと", "I was happy because "],
+      ["📅 明日の予定", "Tomorrow I will "],
+      ["🎬 最近見たもの", "Recently I watched "],
+      ["💭 考えていること", "These days I think about "],
+      ["☀️ 今日の天気と気分", "Today the weather was "]
+    ];
+
     /* ==========================================================
        【2】アプリの状態
        ========================================================== */
-    let fb = null;           // Firebaseの道具箱（初期化後に入る）
-    let uid = null;          // ログイン中ユーザーのID
-    let unsubs = [];         // データ購読の解除関数たち（ログアウト時に呼ぶ）
+    let fb = null;
+    let uid = null;
+    let unsubs = [];
     const state = { diary: [], logs: [], sessions: [], chats: [] };
 
-    let signupMode = true;   // ログイン画面が「新規登録」か「ログイン」か
-    let chatMode = "talk";   // talk=英会話練習 / ask=質問・添削
-    let chatMsgs = [];       // 進行中の会話 [{role:"user"|"model", text}]
-    let chatStart = null;    // 会話開始時刻（学習ログ自動記録用）
-    let timerStart = null;   // タイマー開始時刻
-    let timerTick = null;    // タイマーの表示更新
-    let diaryFb = "";        // 直近のAI添削（保存時に日記へ添付）
+    let signupMode = true;
+    let chatMode = "talk";
+    let chatMsgs = [];
+    let chatStart = null;
+    let timerStart = null;
+    let timerTick = null;
+    let diaryFb = "";
 
     /* ==========================================================
        【3】小さな道具
        ========================================================== */
     const $ = (id) => document.getElementById(id);
-    function todayStr() {
-      const d = new Date();
+    function ymd(d) {
       return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
     }
+    function todayStr() { return ymd(new Date()); }
     function escapeHtml(s) {
       return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
-    function jpDate(ymd) { return ymd ? ymd.replace(/-/g, "/") : ""; }
-    // 今週の月曜日("YYYY-MM-DD")を返す
+    function jpDate(s) { return s ? s.replace(/-/g, "/") : ""; }
     function mondayStr() {
       const d = new Date();
-      const day = (d.getDay() + 6) % 7; // 月曜=0
-      d.setDate(d.getDate() - day);
-      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+      return ymd(d);
     }
+    // 1日の目標（分）。端末に覚えさせる
+    function goalMin() { return Number(localStorage.getItem("zerosta-goal-min")) || 30; }
 
     /* ==========================================================
        【4】Firebase 初期化・ログイン
@@ -388,11 +514,11 @@
       const app = appM.initializeApp(FIREBASE_CONFIG);
       fb = { auth: authM.getAuth(app), db: fsM.getFirestore(app), authM, fsM };
 
-      // ログイン状態が変わるたびに呼ばれる（起動時にも1回呼ばれる）
       authM.onAuthStateChanged(fb.auth, (user) => {
         if (user) {
           uid = user.uid;
           $("whoami").textContent = (user.displayName || "生徒") + " さん";
+          $("greetText").textContent = greeting() + "、" + (user.displayName || "生徒") + "さん";
           $("accountInfo").textContent = "ログイン中: " + (user.email || "");
           $("authView").style.display = "none";
           $("appView").style.display = "block";
@@ -405,8 +531,11 @@
         }
       });
     }
+    function greeting() {
+      const h = new Date().getHours();
+      return h < 11 ? "おはよう" : h < 18 ? "こんにちは" : "こんばんは";
+    }
 
-    // 登録 or ログインボタン
     async function doAuth() {
       const email = $("authEmail").value.trim();
       const pass = $("authPass").value;
@@ -417,11 +546,11 @@
           if (!name) { $("authError").textContent = "名前を入れてください"; return; }
           const cred = await fb.authM.createUserWithEmailAndPassword(fb.auth, email, pass);
           await fb.authM.updateProfile(cred.user, { displayName: name });
-          // プロフィールを保存（コーチが後で一覧するときの土台）
           await fb.fsM.setDoc(fb.fsM.doc(fb.db, "users", cred.user.uid), {
             name: name, email: email, createdAt: new Date().toISOString()
           });
           $("whoami").textContent = name + " さん";
+          $("greetText").textContent = greeting() + "、" + name + "さん";
         } else {
           await fb.authM.signInWithEmailAndPassword(fb.auth, email, pass);
         }
@@ -439,7 +568,7 @@
     }
 
     /* ==========================================================
-       【5】データの購読（Firestore → 画面へ自動反映）
+       【5】データ購読（Firestore → 画面へ自動反映）
        ========================================================== */
     function startSubscriptions() {
       const { fsM, db } = fb;
@@ -497,39 +626,61 @@
     function renderHome() {
       const today = todayStr();
       const monday = mondayStr();
-      $("todayTitle").textContent = "今日 " + jpDate(today);
+      $("todayTitle").textContent = jpDate(today) + " " + ["日", "月", "火", "水", "木", "金", "土"][new Date().getDay()] + "曜日";
 
       const todayMin = state.logs.filter(l => l.date === today).reduce((s, l) => s + (l.minutes || 0), 0);
-      const weekLogs = state.logs.filter(l => l.date >= monday);
-      const weekMin = weekLogs.reduce((s, l) => s + (l.minutes || 0), 0);
-      $("statToday").textContent = todayMin + "分";
+      const weekMin = state.logs.filter(l => l.date >= monday).reduce((s, l) => s + (l.minutes || 0), 0);
       $("statWeek").textContent = weekMin + "分";
 
-      // 連続学習日数: ログ・日記・セッションのどれかがある日をつなげて数える（今日はまだ無くてもセーフ）
+      // 進捗リング（今日の学習 vs 目標）。達成したら緑になる
+      const goal = goalMin();
+      const pct = Math.min(100, Math.round(todayMin / goal * 100));
+      const color = pct >= 100 ? "var(--green)" : "var(--accent)";
+      $("ringTrack").style.background = "conic-gradient(" + color + " " + pct + "%, var(--line) 0)";
+      $("ringVal").textContent = todayMin;
+      $("ringCap").textContent = "/ " + goal + "分";
+      $("goalSelect").value = String(goal);
+      $("goalDone").style.display = pct >= 100 ? "block" : "none";
+
+      // 連続日数（ログ・日記・セッションのどれかがある日。今日まだでも途切れない）
       const days = new Set();
       state.logs.forEach(l => days.add(l.date));
       state.diary.forEach(d => days.add(d.date));
       state.sessions.forEach(s => days.add(s.date));
       let streak = 0;
       const cur = new Date();
-      if (!days.has(today)) cur.setDate(cur.getDate() - 1); // 今日まだなら昨日から数える
+      if (!days.has(today)) cur.setDate(cur.getDate() - 1);
       for (;;) {
-        const key = cur.getFullYear() + "-" + String(cur.getMonth() + 1).padStart(2, "0") + "-" + String(cur.getDate()).padStart(2, "0");
-        if (days.has(key)) { streak++; cur.setDate(cur.getDate() - 1); } else break;
+        if (days.has(ymd(cur))) { streak++; cur.setDate(cur.getDate() - 1); } else break;
       }
-      $("statStreak").textContent = streak + "日";
+      $("statStreak").textContent = streak;
 
-      // 今週のカテゴリ別内訳バー
+      // この7日間のドット（やった日が塗られる）
+      let dots = "";
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(); d.setDate(d.getDate() - i);
+        const key = ymd(d);
+        const on = days.has(key);
+        dots += `<div class="dot ${on ? "on" : ""} ${key === today ? "today" : ""}">
+          <div class="c">${on ? "✓" : ""}</div>
+          <div class="d">${["日", "月", "火", "水", "木", "金", "土"][d.getDay()]}</div>
+        </div>`;
+      }
+      $("weekDots").innerHTML = dots;
+
+      // 今週のカテゴリ別内訳
       const byCat = {};
-      weekLogs.forEach(l => { byCat[l.category || "その他"] = (byCat[l.category || "その他"] || 0) + (l.minutes || 0); });
+      state.logs.filter(l => l.date >= monday).forEach(l => {
+        byCat[l.category || "その他"] = (byCat[l.category || "その他"] || 0) + (l.minutes || 0);
+      });
       const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
       if (cats.length === 0) {
-        $("weekBars").innerHTML = '<p class="note">まだ記録がありません</p>';
+        $("weekBars").innerHTML = '<div class="empty"><div class="big">🌱</div>今週はこれから。まず1つ記録してみよう</div>';
       } else {
         const max = cats[0][1];
         $("weekBars").innerHTML = cats.map(([name, min]) => `
           <div class="bar-line">
-            <span class="name">${escapeHtml(name)}</span>
+            <span class="name">${escapeHtml(catLabel(name))}</span>
             <div class="bar"><div style="width:${Math.round(min / max * 100)}%"></div></div>
             <span class="min">${min}分</span>
           </div>`).join("");
@@ -538,7 +689,7 @@
 
     function renderDiary() {
       const el = $("diaryList");
-      if (state.diary.length === 0) { el.innerHTML = '<p class="note">まだありません</p>'; return; }
+      if (state.diary.length === 0) { el.innerHTML = '<div class="empty"><div class="big">📔</div>最初の日記を書いてみよう。1文でOK</div>'; return; }
       el.innerHTML = state.diary.map(d => `
         <div class="item">
           <div class="top"><span class="date">${jpDate(d.date)}</span>
@@ -550,11 +701,11 @@
 
     function renderLogs() {
       const el = $("logList");
-      if (state.logs.length === 0) { el.innerHTML = '<p class="note">まだありません</p>'; return; }
+      if (state.logs.length === 0) { el.innerHTML = '<div class="empty"><div class="big">⏱</div>タイマーか手入力で記録してみよう</div>'; return; }
       el.innerHTML = state.logs.slice(0, 30).map(l => `
         <div class="item">
           <div class="top">
-            <span><span class="tag">${escapeHtml(l.category || "その他")}</span>
+            <span><span class="tag">${escapeHtml(catLabel(l.category || "その他"))}</span>
               <b style="font-size:14px;"> ${l.minutes || 0}分</b>
               <span class="date"> ${jpDate(l.date)}</span></span>
             <button class="del" data-coll="logs" data-id="${l.id}">削除</button>
@@ -565,7 +716,7 @@
 
     function renderSessions() {
       const el = $("sesList");
-      if (state.sessions.length === 0) { el.innerHTML = '<p class="note">まだありません</p>'; return; }
+      if (state.sessions.length === 0) { el.innerHTML = '<div class="empty"><div class="big">🎓</div>セッションや英会話のあとに気づきを残そう</div>'; return; }
       el.innerHTML = state.sessions.map(s => `
         <div class="item">
           <div class="top">
@@ -580,11 +731,11 @@
 
     function renderChats() {
       const el = $("chatList");
-      if (state.chats.length === 0) { el.innerHTML = '<p class="note">まだありません</p>'; return; }
+      if (state.chats.length === 0) { el.innerHTML = '<div class="empty"><div class="big">🗣</div>会話を終了するとここに保存されます</div>'; return; }
       el.innerHTML = state.chats.slice(0, 10).map(c => `
         <div class="item">
           <div class="top">
-            <span><span class="tag">${c.mode === "talk" ? "英会話練習" : "質問・添削"}</span>
+            <span><span class="tag">${c.mode === "talk" ? "🗣 英会話練習" : "❓ 質問・添削"}</span>
               <span class="date"> ${jpDate((c.startedAt || "").slice(0, 10))} ・ ${(c.messages || []).length}メッセージ</span></span>
             <button class="del" data-coll="chats" data-id="${c.id}">削除</button>
           </div>
@@ -600,8 +751,17 @@
     function drawChat(thinking) {
       const box = $("chatBox");
       box.innerHTML = chatMsgs.map(m => `<div class="bubble ${m.role}">${escapeHtml(m.text)}</div>`).join("")
-        + (thinking ? '<div class="bubble thinking">考え中...</div>' : "");
+        + (thinking ? '<div class="typing"><span></span><span></span><span></span></div>' : "");
       box.scrollTop = box.scrollHeight;
+      renderChatChips();
+    }
+
+    // 会話がまだ無いときだけ、入口チップを見せる
+    function renderChatChips() {
+      const el = $("chatChips");
+      if (chatMsgs.length > 0 || !GEMINI_API_KEY) { el.innerHTML = ""; return; }
+      const chips = chatMode === "talk" ? TALK_CHIPS : ASK_CHIPS;
+      el.innerHTML = chips.map(c => `<button class="chip" data-chip="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join("");
     }
 
     async function sendChat() {
@@ -641,7 +801,6 @@
     /* ==========================================================
        【9】操作（イベント）
        ========================================================== */
-    // タブ切り替え
     function goPage(name) {
       document.querySelectorAll("section").forEach(s => s.classList.remove("active"));
       $("page-" + name).classList.add("active");
@@ -650,7 +809,6 @@
     document.querySelectorAll("nav button").forEach(btn => btn.addEventListener("click", () => goPage(btn.dataset.page)));
     document.querySelectorAll("[data-go]").forEach(btn => btn.addEventListener("click", () => goPage(btn.dataset.go)));
 
-    // ログイン画面
     $("authBtn").addEventListener("click", doAuth);
     $("authToggle").addEventListener("click", () => {
       signupMode = !signupMode;
@@ -661,13 +819,40 @@
     });
     $("logoutBtn").addEventListener("click", () => fb.authM.signOut(fb.auth));
 
+    // 目標の変更（端末に記憶して即リング反映）
+    $("goalSelect").addEventListener("change", () => {
+      localStorage.setItem("zerosta-goal-min", $("goalSelect").value);
+      renderHome();
+    });
+
     // チャット
-    $("modeTalk").addEventListener("click", () => { chatMode = "talk"; $("modeTalk").classList.add("on"); $("modeAsk").classList.remove("on"); $("chatInput").placeholder = "英語で話しかけてみよう"; });
-    $("modeAsk").addEventListener("click", () => { chatMode = "ask"; $("modeAsk").classList.add("on"); $("modeTalk").classList.remove("on"); $("chatInput").placeholder = "質問や添削してほしい英文をどうぞ（日本語OK）"; });
+    $("modeTalk").addEventListener("click", () => { chatMode = "talk"; $("modeTalk").classList.add("on"); $("modeAsk").classList.remove("on"); $("chatInput").placeholder = "英語で話しかけてみよう"; renderChatChips(); });
+    $("modeAsk").addEventListener("click", () => { chatMode = "ask"; $("modeAsk").classList.add("on"); $("modeTalk").classList.remove("on"); $("chatInput").placeholder = "質問や添削してほしい英文をどうぞ（日本語OK）"; renderChatChips(); });
     $("chatSend").addEventListener("click", sendChat);
     $("chatEnd").addEventListener("click", endChat);
+    // チップ: 押したら入力欄に入れる。文末が ": " のもの（添削依頼）以外はそのまま送信
+    $("chatChips").addEventListener("click", (e) => {
+      const chip = e.target.closest("[data-chip]");
+      if (!chip) return;
+      $("chatInput").value = chip.dataset.chip;
+      if (!chip.dataset.chip.endsWith(": ")) sendChat();
+      else $("chatInput").focus();
+    });
 
-    // 日記
+    // 日記のお題チップ: 空のときだけ書き出しを入れてあげる
+    function renderDiaryChips() {
+      const picks = DIARY_STARTERS.slice().sort(() => 0.5 - Math.random()).slice(0, 3);
+      $("diaryChips").innerHTML = picks.map(([label, starter]) =>
+        `<button class="chip" data-starter="${escapeHtml(starter)}">${escapeHtml(label)}</button>`).join("");
+    }
+    $("diaryChips").addEventListener("click", (e) => {
+      const chip = e.target.closest("[data-starter]");
+      if (!chip) return;
+      const ta = $("diaryText");
+      if (!ta.value.trim()) ta.value = chip.dataset.starter;
+      ta.focus();
+    });
+
     $("diaryAiBtn").addEventListener("click", async () => {
       const text = $("diaryText").value.trim();
       if (!text) { alert("先に日記を書いてください"); return; }
@@ -693,6 +878,7 @@
       await addTo("diary", { date, text, feedback: diaryFb || "", createdAt: new Date().toISOString() });
       $("diaryText").value = ""; diaryFb = "";
       $("diaryFeedback").style.display = "none"; $("diaryFeedback").textContent = "";
+      renderDiaryChips();
       alert("日記を保存しました");
     });
 
@@ -713,7 +899,6 @@
         $("timerBtn").textContent = "スタート";
         $("timerDisplay").classList.remove("running");
         $("timerDisplay").textContent = "00:00";
-        // 計った結果を手入力フォームに流し込む（内容メモを足して「記録する」を押してもらう）
         $("logDate").value = todayStr();
         $("logMin").value = minutes;
         $("logCat").value = $("timerCat").value;
@@ -722,7 +907,6 @@
       }
     });
 
-    // 学習ログ手入力
     $("logSaveBtn").addEventListener("click", async () => {
       const date = $("logDate").value;
       const minutes = Number($("logMin").value);
@@ -736,7 +920,6 @@
       alert("記録しました");
     });
 
-    // セッション記録
     $("sesSaveBtn").addEventListener("click", async () => {
       const date = $("sesDate").value;
       const note = $("sesNote").value.trim();
@@ -750,7 +933,6 @@
       alert("記録しました");
     });
 
-    // 一覧の削除ボタン（各一覧の親でまとめて聞く）
     ["diaryList", "logList", "sesList", "chatList"].forEach(listId => {
       $(listId).addEventListener("click", (e) => {
         if (!e.target.classList.contains("del")) return;
@@ -765,6 +947,7 @@
     $("diaryDate").value = todayStr();
     $("logDate").value = todayStr();
     $("sesDate").value = todayStr();
+    renderDiaryChips();
     if (!GEMINI_API_KEY) { $("aiNotice").style.display = "block"; $("chatSend").disabled = true; }
     initFirebase();
   </script>
