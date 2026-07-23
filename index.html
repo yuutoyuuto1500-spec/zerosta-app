@@ -2,12 +2,13 @@
 <html lang="ja">
 <!--
   ============================================================
-  ゼロスタ学習ノート v1.1
+  ゼロスタ学習ノート v1.2
   ============================================================
   Zerosta の生徒用学習アプリ。
-  v1.1: UI/UX刷新（DESIGN-NOTES.md の調査に基づく）
-  - 進捗リング（今日の学習 vs 目標）、連続日数🔥、直近7日ドット
-  - ダークモード対応、カテゴリ絵文字、会話・日記の入口チップ
+  v1.2: Apple.com のデザイン言語を参考に全面リデザイン
+  - 実測トークン: アクセント#0071e3 / 背景#f5f5f7 / 文字#1d1d1f
+  - ガラス質ヘッダー(saturate(180%) blur(20px))、ピルボタン(980px)
+  - 紫グラデーションを廃止し単色アクセントへ。alert()をトーストへ
   機能: ログイン / AI会話 / 英語日記(AI添削) / 学習ログ / セッション記録
   データは Firestore users/{自分のID}/ 以下。本人以外読み書き不可。
   ============================================================
@@ -19,139 +20,180 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="ゼロスタ">
-  <meta name="theme-color" content="#5b5bd6">
+  <meta name="theme-color" content="#f5f5f7">
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     :root {
-      --bg: #f3f4f8; --card: #ffffff; --text: #1b1b22; --sub: #71717a;
-      --accent: #5b5bd6; --accent2: #8b5cf6;
-      --accent-soft: #eceafd; --accent-text: #4f46b8;
-      --green: #22a06b; --green-soft: #e5f6ee;
-      --red: #d0342c; --line: #e6e6ee;
-      --shadow: 0 2px 10px rgba(40, 40, 90, 0.06);
+      --bg: #f5f5f7; --card: #ffffff; --text: #1d1d1f; --sub: #6e6e73;
+      --accent: #0071e3; --accent-hover: #0077ed; --link: #0066cc;
+      --fill: #e8e8ed; --fill-hover: #e0e0e5;
+      --green: #34c759; --green-text: #248a3d;
+      --red: #e30000; --line: #d2d2d7;
+      --glass: rgba(250, 250, 252, 0.8);
+      --shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+      --ease: cubic-bezier(0.4, 0, 0.6, 1);
+      --ease-out: cubic-bezier(0.25, 0.1, 0.3, 1);
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #121218; --card: #1d1d26; --text: #f0f0f4; --sub: #9b9ba6;
-        --accent: #7c7cf0; --accent2: #a78bfa;
-        --accent-soft: #2a2a44; --accent-text: #b9b9fb;
-        --green: #34c98a; --green-soft: #16362a;
-        --red: #ff6b61; --line: #33333f;
-        --shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+        --bg: #000000; --card: #1d1d1f; --text: #f5f5f7; --sub: #86868b;
+        --accent: #0071e3; --accent-hover: #0077ed; --link: #2997ff;
+        --fill: #2c2c2e; --fill-hover: #38383a;
+        --green: #30d158; --green-text: #30d158;
+        --red: #ff453a; --line: #424245;
+        --glass: rgba(22, 22, 23, 0.8);
+        --shadow: none;
       }
     }
+    html { scroll-behavior: smooth; }
     body {
-      font-family: -apple-system, "Hiragino Sans", sans-serif;
+      font-family: "SF Pro JP", "SF Pro Text", "SF Pro Icons", -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Helvetica Neue", sans-serif;
       background: var(--bg); color: var(--text);
       padding-bottom: 84px;
+      -webkit-font-smoothing: antialiased;
     }
     header {
-      background: var(--card); padding: 14px 16px 10px;
+      background: var(--glass);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      backdrop-filter: saturate(180%) blur(20px);
+      padding: 14px 16px 12px;
       border-bottom: 1px solid var(--line);
       position: sticky; top: 0; z-index: 5;
       display: flex; justify-content: space-between; align-items: baseline;
     }
-    header h1 {
-      font-size: 17px; font-weight: 700;
-      background: linear-gradient(90deg, var(--accent), var(--accent2));
-      -webkit-background-clip: text; background-clip: text; color: transparent;
-    }
+    header h1 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
     header .who { font-size: 12px; color: var(--sub); }
 
-    section { padding: 16px; display: none; max-width: 680px; margin: 0 auto; }
-    section.active { display: block; }
+    section { padding: 20px 16px; display: none; max-width: 680px; margin: 0 auto; }
+    section.active { display: block; animation: rise .45s var(--ease-out); }
+    @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
     .card {
-      background: var(--card); border-radius: 18px; padding: 16px;
-      margin-bottom: 14px; box-shadow: var(--shadow);
+      background: var(--card); border-radius: 18px; padding: 20px;
+      margin-bottom: 16px; box-shadow: var(--shadow);
     }
-    .card h2 { font-size: 13px; color: var(--sub); font-weight: 600; margin-bottom: 10px; }
+    .card h2 {
+      font-size: 12px; color: var(--sub); font-weight: 600;
+      letter-spacing: 0.007em; margin-bottom: 12px;
+    }
 
-    label { display: block; font-size: 13px; color: var(--sub); margin: 10px 0 4px; }
+    label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 5px; }
     input, textarea, select {
-      width: 100%; font-size: 16px; padding: 11px;
-      border: 1.5px solid var(--line); border-radius: 12px;
-      background: var(--bg); color: var(--text); font-family: inherit;
+      width: 100%; font-size: 16px; padding: 12px;
+      border: 1px solid var(--line); border-radius: 12px;
+      background: var(--card); color: var(--text); font-family: inherit;
+      transition: border-color .2s var(--ease), box-shadow .2s var(--ease);
     }
-    input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    input:focus, textarea:focus, select:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.18);
+    }
     textarea { min-height: 90px; resize: vertical; }
     button { font-family: inherit; cursor: pointer; }
-    button.primary {
-      width: 100%; margin-top: 14px; padding: 13px; font-size: 16px; font-weight: 700;
-      color: #fff; background: linear-gradient(90deg, var(--accent), var(--accent2));
-      border: none; border-radius: 14px; transition: transform .08s, opacity .15s;
+    button:focus-visible, .linkish:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: 2px;
     }
-    button.primary:active { transform: scale(0.98); opacity: 0.85; }
+    button.primary {
+      width: 100%; margin-top: 16px; padding: 13px; font-size: 16px; font-weight: 500;
+      color: #fff; background: var(--accent);
+      border: none; border-radius: 980px;
+      transition: background .2s var(--ease), transform .15s var(--ease), opacity .2s var(--ease);
+    }
+    button.primary:hover { background: var(--accent-hover); }
+    button.primary:active { transform: scale(0.98); }
     button.primary:disabled { opacity: 0.4; }
     button.ghost {
-      width: 100%; margin-top: 10px; padding: 12px; font-size: 14px;
-      color: var(--accent-text); background: var(--accent-soft);
-      border: none; border-radius: 14px; font-weight: 600; text-align: left;
-      transition: transform .08s;
+      width: 100%; margin-top: 10px; padding: 13px 16px; font-size: 14px;
+      color: var(--text); background: var(--fill);
+      border: none; border-radius: 12px; font-weight: 500; text-align: left;
+      transition: background .2s var(--ease), transform .15s var(--ease);
     }
+    button.ghost:hover { background: var(--fill-hover); }
     button.ghost:active { transform: scale(0.98); }
     .error { color: var(--red); font-size: 13px; margin-top: 10px; min-height: 1em; }
     .note { font-size: 12px; color: var(--sub); line-height: 1.7; }
 
+    /* ---- トースト通知（alertの代替） ---- */
+    #toast {
+      position: fixed; top: 62px; left: 50%; transform: translate(-50%, -12px);
+      max-width: min(88vw, 480px);
+      background: var(--glass);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      backdrop-filter: saturate(180%) blur(20px);
+      color: var(--text); font-size: 14px; font-weight: 500;
+      padding: 11px 20px; border-radius: 980px;
+      border: 1px solid var(--line);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+      opacity: 0; pointer-events: none; z-index: 20;
+      transition: opacity .3s var(--ease), transform .3s var(--ease-out);
+      text-align: center;
+    }
+    #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
     /* ---- ログイン ---- */
-    #authView { max-width: 420px; margin: 0 auto; padding: 44px 16px; }
-    #authView .logo { text-align: center; margin-bottom: 24px; }
+    #authView { max-width: 420px; margin: 0 auto; padding: 56px 16px; }
+    #authView .logo { text-align: center; margin-bottom: 32px; }
     #authView .logo .mark { font-size: 44px; }
     #authView .logo h1 {
-      font-size: 24px; margin-top: 6px; font-weight: 800;
-      background: linear-gradient(90deg, var(--accent), var(--accent2));
-      -webkit-background-clip: text; background-clip: text; color: transparent;
+      font-size: 28px; margin-top: 10px; font-weight: 600;
+      letter-spacing: -0.016em; line-height: 1.1;
     }
-    #authView .logo p { font-size: 13px; color: var(--sub); margin-top: 4px; }
-    .linkish { color: var(--accent-text); font-size: 13px; text-align: center; margin-top: 14px; text-decoration: underline; cursor: pointer; }
+    #authView .logo p { font-size: 14px; color: var(--sub); margin-top: 6px; }
+    .linkish {
+      color: var(--link); font-size: 13px; text-align: center;
+      margin-top: 16px; cursor: pointer;
+      transition: opacity .2s var(--ease);
+    }
+    .linkish:hover { text-decoration: underline; }
 
     /* ---- ホーム: あいさつ ---- */
-    .greet { padding: 4px 4px 12px; }
-    .greet .hello { font-size: 20px; font-weight: 700; }
-    .greet .date { font-size: 13px; color: var(--sub); margin-top: 2px; }
+    .greet { padding: 8px 4px 16px; }
+    .greet .hello { font-size: 26px; font-weight: 600; letter-spacing: -0.016em; line-height: 1.15; }
+    .greet .date { font-size: 13px; color: var(--sub); margin-top: 4px; }
 
     /* ---- ホーム: リング＋ストリーク ---- */
-    .hero { display: flex; align-items: center; gap: 18px; }
+    .hero { display: flex; align-items: center; gap: 20px; }
     .ring { position: relative; width: 128px; height: 128px; flex-shrink: 0; }
     .ring .track {
       width: 100%; height: 100%; border-radius: 50%;
-      background: conic-gradient(var(--accent) 0%, var(--line) 0);
-      transition: background .4s;
+      background: conic-gradient(var(--accent) 0%, var(--fill) 0);
+      transition: background .4s var(--ease);
       display: flex; align-items: center; justify-content: center;
     }
     .ring .hole {
-      width: 96px; height: 96px; border-radius: 50%; background: var(--card);
+      width: 98px; height: 98px; border-radius: 50%; background: var(--card);
       display: flex; flex-direction: column; align-items: center; justify-content: center;
     }
-    .ring .val { font-size: 26px; font-weight: 800; line-height: 1; }
+    .ring .val { font-size: 28px; font-weight: 600; letter-spacing: -0.01em; line-height: 1; font-variant-numeric: tabular-nums; }
     .ring .cap { font-size: 11px; color: var(--sub); margin-top: 3px; }
     .hero .side { flex: 1; }
-    .hero .streak { font-size: 15px; font-weight: 700; }
-    .hero .streak b { font-size: 26px; }
+    .hero .streak { font-size: 15px; font-weight: 600; }
+    .hero .streak b { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
     .hero .weektotal { font-size: 13px; color: var(--sub); margin-top: 4px; }
-    .goal-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--sub); }
-    .goal-row select { width: auto; font-size: 13px; padding: 4px 8px; border-radius: 8px; }
-    .goal-done { color: var(--green); font-weight: 700; font-size: 13px; margin-top: 8px; display: none; }
+    .goal-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px; color: var(--sub); }
+    .goal-row select { width: auto; font-size: 13px; padding: 5px 10px; border-radius: 8px; }
+    .goal-done { color: var(--green-text); font-weight: 600; font-size: 13px; margin-top: 8px; display: none; }
 
     /* ---- 7日ドット ---- */
     .dots { display: flex; justify-content: space-between; margin-top: 4px; }
     .dot { text-align: center; flex: 1; }
     .dot .c {
       width: 30px; height: 30px; border-radius: 50%; margin: 0 auto;
-      background: var(--line); display: flex; align-items: center; justify-content: center;
+      background: var(--fill); display: flex; align-items: center; justify-content: center;
       font-size: 13px; color: var(--sub);
+      transition: background .3s var(--ease);
     }
-    .dot.on .c { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; font-weight: 700; }
+    .dot.on .c { background: var(--accent); color: #fff; font-weight: 600; }
     .dot.today .c { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--accent); }
-    .dot .d { font-size: 10px; color: var(--sub); margin-top: 5px; }
+    .dot .d { font-size: 10px; color: var(--sub); margin-top: 6px; }
 
     /* ---- 内訳バー ---- */
-    .bar-line { display: flex; align-items: center; gap: 8px; margin-top: 9px; font-size: 12px; }
+    .bar-line { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; }
     .bar-line .name { width: 108px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .bar-line .bar { flex: 1; height: 10px; background: var(--line); border-radius: 5px; overflow: hidden; }
-    .bar-line .bar > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 5px; transition: width .4s; }
-    .bar-line .min { width: 48px; text-align: right; color: var(--sub); }
+    .bar-line .bar { flex: 1; height: 8px; background: var(--fill); border-radius: 4px; overflow: hidden; }
+    .bar-line .bar > div { height: 100%; background: var(--accent); border-radius: 4px; transition: width .4s var(--ease-out); }
+    .bar-line .min { width: 48px; text-align: right; color: var(--sub); font-variant-numeric: tabular-nums; }
 
     /* ---- チャット ---- */
     #chatBox {
@@ -160,14 +202,14 @@
       padding: 4px 2px; margin-bottom: 10px;
     }
     .bubble {
-      max-width: 85%; padding: 10px 13px; border-radius: 16px;
+      max-width: 85%; padding: 10px 14px; border-radius: 18px;
       font-size: 15px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
-      animation: pop .18s ease-out;
+      animation: pop .25s var(--ease-out);
     }
     @keyframes pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-    .bubble.user { align-self: flex-end; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border-bottom-right-radius: 5px; }
-    .bubble.model { align-self: flex-start; background: var(--accent-soft); color: var(--text); border-bottom-left-radius: 5px; }
-    .typing { align-self: flex-start; display: flex; gap: 4px; padding: 12px 14px; background: var(--accent-soft); border-radius: 16px; border-bottom-left-radius: 5px; }
+    .bubble.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 5px; }
+    .bubble.model { align-self: flex-start; background: var(--fill); color: var(--text); border-bottom-left-radius: 5px; }
+    .typing { align-self: flex-start; display: flex; gap: 4px; padding: 12px 14px; background: var(--fill); border-radius: 18px; border-bottom-left-radius: 5px; }
     .typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--sub); animation: blink 1.2s infinite; }
     .typing span:nth-child(2) { animation-delay: .2s; }
     .typing span:nth-child(3) { animation-delay: .4s; }
@@ -175,58 +217,86 @@
     .chat-input-row { display: flex; gap: 8px; }
     .chat-input-row textarea { min-height: 46px; max-height: 120px; flex: 1; }
     .chat-input-row button {
-      width: 76px; border: none; border-radius: 13px;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
-      color: #fff; font-weight: 700; font-size: 14px;
+      width: 76px; border: none; border-radius: 980px;
+      background: var(--accent);
+      color: #fff; font-weight: 500; font-size: 14px;
+      transition: background .2s var(--ease), transform .15s var(--ease);
     }
-    .mode-row { display: flex; gap: 8px; margin-bottom: 10px; }
+    .chat-input-row button:hover { background: var(--accent-hover); }
+    .chat-input-row button:active { transform: scale(0.97); }
+    .chat-input-row button:disabled { opacity: 0.4; }
+    .mode-row { display: flex; gap: 8px; margin-bottom: 12px; }
     .mode-btn {
-      flex: 1; padding: 10px; font-size: 13px; font-weight: 600;
-      border: 1.5px solid var(--line); border-radius: 12px; background: var(--card); color: var(--sub);
+      flex: 1; padding: 10px; font-size: 13px; font-weight: 500;
+      border: none; border-radius: 980px; background: var(--fill); color: var(--sub);
+      transition: background .2s var(--ease), color .2s var(--ease);
     }
-    .mode-btn.on { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent); }
+    .mode-btn:hover { background: var(--fill-hover); }
+    .mode-btn.on { background: var(--text); color: var(--bg); }
 
     /* ---- チップ（入口の提案） ---- */
-    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
     .chip {
-      font-size: 13px; padding: 8px 12px; border-radius: 99px;
-      background: var(--card); border: 1.5px solid var(--line); color: var(--text);
-      transition: transform .08s;
+      font-size: 13px; padding: 8px 14px; border-radius: 980px;
+      background: var(--fill); border: none; color: var(--text);
+      transition: background .2s var(--ease), transform .15s var(--ease);
     }
+    .chip:hover { background: var(--fill-hover); }
     .chip:active { transform: scale(0.96); }
 
     /* ---- 一覧 ---- */
-    .item { padding: 11px 0; border-bottom: 1px solid var(--line); }
+    .item { padding: 12px 0; border-bottom: 1px solid var(--line); }
     .item:last-child { border-bottom: none; }
     .item .top { display: flex; justify-content: space-between; align-items: center; }
-    .item .date { font-size: 12px; color: var(--sub); }
-    .item .body { font-size: 14px; line-height: 1.6; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
-    .item .fb { font-size: 13px; line-height: 1.6; margin-top: 6px; padding: 9px 11px; background: var(--accent-soft); border-radius: 12px; white-space: pre-wrap; }
-    .item .del { background: none; border: none; color: var(--red); font-size: 12px; padding: 4px 6px; }
-    .tag { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 99px; background: var(--accent-soft); color: var(--accent-text); }
-    .empty { text-align: center; color: var(--sub); font-size: 13px; padding: 18px 0; line-height: 1.8; }
+    .item .date { font-size: 12px; color: var(--sub); font-variant-numeric: tabular-nums; }
+    .item .body { font-size: 14px; line-height: 1.6; margin-top: 5px; white-space: pre-wrap; word-break: break-word; }
+    .item .fb { font-size: 13px; line-height: 1.6; margin-top: 6px; padding: 10px 12px; background: var(--fill); border-radius: 12px; white-space: pre-wrap; }
+    .item .del {
+      background: none; border: none; color: var(--red); font-size: 12px; padding: 4px 6px;
+      border-radius: 6px; transition: background .2s var(--ease);
+    }
+    .item .del:hover { background: var(--fill); }
+    .tag { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 980px; background: var(--fill); color: var(--sub); }
+    .empty { text-align: center; color: var(--sub); font-size: 13px; padding: 22px 0; line-height: 1.8; }
     .empty .big { font-size: 30px; }
 
     /* ---- タイマー ---- */
-    #timerDisplay { font-size: 48px; font-weight: 800; text-align: center; letter-spacing: 1px; margin: 10px 0; font-variant-numeric: tabular-nums; }
+    #timerDisplay {
+      font-size: 52px; font-weight: 600; text-align: center;
+      letter-spacing: -0.01em; margin: 12px 0; font-variant-numeric: tabular-nums;
+      transition: color .3s var(--ease);
+    }
     #timerDisplay.running { color: var(--accent); }
 
     /* ---- 下タブ ---- */
     nav {
       position: fixed; bottom: 0; left: 0; right: 0; display: none;
-      background: var(--card); border-top: 1px solid var(--line);
+      background: var(--glass);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      backdrop-filter: saturate(180%) blur(20px);
+      border-top: 1px solid var(--line);
       padding-bottom: env(safe-area-inset-bottom); z-index: 5;
     }
     nav.visible { display: flex; }
-    nav button { flex: 1; padding: 9px 0 7px; background: none; border: none; font-size: 10px; color: var(--sub); }
-    nav button .icon { display: block; font-size: 20px; margin-bottom: 3px; transition: transform .12s; }
-    nav button.active { color: var(--accent-text); font-weight: 700; }
-    nav button.active .icon { transform: translateY(-2px) scale(1.12); }
-    details summary { cursor: pointer; font-size: 13px; color: var(--sub); }
+    nav button {
+      flex: 1; padding: 9px 0 7px; background: none; border: none;
+      font-size: 10px; color: var(--sub);
+      transition: color .2s var(--ease);
+    }
+    nav button .icon { display: block; font-size: 20px; margin-bottom: 3px; transition: transform .2s var(--ease-out); }
+    nav button.active { color: var(--accent); font-weight: 600; }
+    nav button.active .icon { transform: translateY(-2px) scale(1.1); }
+    details summary { cursor: pointer; font-size: 13px; color: var(--link); }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
   </style>
 </head>
 
 <body>
+  <div id="toast" role="status" aria-live="polite"></div>
+
   <!-- ======== ログイン画面 ======== -->
   <div id="authView">
     <div class="logo">
@@ -497,6 +567,16 @@
     // 1日の目標（分）。端末に覚えさせる
     function goalMin() { return Number(localStorage.getItem("zerosta-goal-min")) || 30; }
 
+    // トースト通知（alertの代替。操作を止めずに結果を知らせる）
+    let toastTimer = null;
+    function toast(msg) {
+      const el = $("toast");
+      el.textContent = msg;
+      el.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
+    }
+
     /* ==========================================================
        【4】Firebase 初期化・ログイン
        ========================================================== */
@@ -636,7 +716,7 @@
       const goal = goalMin();
       const pct = Math.min(100, Math.round(todayMin / goal * 100));
       const color = pct >= 100 ? "var(--green)" : "var(--accent)";
-      $("ringTrack").style.background = "conic-gradient(" + color + " " + pct + "%, var(--line) 0)";
+      $("ringTrack").style.background = "conic-gradient(" + color + " " + pct + "%, var(--fill) 0)";
       $("ringVal").textContent = todayMin;
       $("ringCap").textContent = "/ " + goal + "分";
       $("goalSelect").value = String(goal);
@@ -795,7 +875,7 @@
       });
       chatMsgs = []; chatStart = null;
       drawChat(false);
-      alert("会話を保存し、学習ログに " + minutes + "分 を記録しました");
+      toast("会話を保存し、学習ログに " + minutes + "分 を記録しました");
     }
 
     /* ==========================================================
@@ -855,8 +935,8 @@
 
     $("diaryAiBtn").addEventListener("click", async () => {
       const text = $("diaryText").value.trim();
-      if (!text) { alert("先に日記を書いてください"); return; }
-      if (!GEMINI_API_KEY) { alert("AI機能は準備中です（運営側の設定待ち）"); return; }
+      if (!text) { toast("先に日記を書いてください"); return; }
+      if (!GEMINI_API_KEY) { toast("AI機能は準備中です（運営側の設定待ち）"); return; }
       $("diaryAiBtn").disabled = true; $("diaryAiBtn").textContent = "添削中...";
       try {
         const fbText = await callAI(
@@ -866,20 +946,20 @@
         diaryFb = fbText;
         $("diaryFeedback").textContent = fbText;
         $("diaryFeedback").style.display = "block";
-      } catch (err) { alert("添削に失敗しました: " + err.message); }
+      } catch (err) { toast("添削に失敗しました: " + err.message); }
       $("diaryAiBtn").disabled = false; $("diaryAiBtn").textContent = "🤖 AIに添削してもらう";
     });
 
     $("diarySaveBtn").addEventListener("click", async () => {
       const text = $("diaryText").value.trim();
       const date = $("diaryDate").value;
-      if (!text) { alert("日記を書いてください"); return; }
-      if (!date) { alert("日付を入れてください"); return; }
+      if (!text) { toast("日記を書いてください"); return; }
+      if (!date) { toast("日付を入れてください"); return; }
       await addTo("diary", { date, text, feedback: diaryFb || "", createdAt: new Date().toISOString() });
       $("diaryText").value = ""; diaryFb = "";
       $("diaryFeedback").style.display = "none"; $("diaryFeedback").textContent = "";
       renderDiaryChips();
-      alert("日記を保存しました");
+      toast("日記を保存しました");
     });
 
     // タイマー
@@ -903,34 +983,34 @@
         $("logMin").value = minutes;
         $("logCat").value = $("timerCat").value;
         $("logNote").focus();
-        alert(minutes + "分 計測しました。内容メモを書いて「記録する」を押してください");
+        toast(minutes + "分 計測しました。内容メモを書いて「記録する」を押してください");
       }
     });
 
     $("logSaveBtn").addEventListener("click", async () => {
       const date = $("logDate").value;
       const minutes = Number($("logMin").value);
-      if (!date) { alert("日付を入れてください"); return; }
-      if (!minutes || minutes <= 0) { alert("時間（分）を1以上で入れてください"); return; }
+      if (!date) { toast("日付を入れてください"); return; }
+      if (!minutes || minutes <= 0) { toast("時間（分）を1以上で入れてください"); return; }
       await addTo("logs", {
         date, minutes, category: $("logCat").value,
         note: $("logNote").value.trim(), createdAt: new Date().toISOString()
       });
       $("logMin").value = ""; $("logNote").value = "";
-      alert("記録しました");
+      toast("記録しました");
     });
 
     $("sesSaveBtn").addEventListener("click", async () => {
       const date = $("sesDate").value;
       const note = $("sesNote").value.trim();
-      if (!date) { alert("日付を入れてください"); return; }
-      if (!note) { alert("内容・気づきを書いてください"); return; }
+      if (!date) { toast("日付を入れてください"); return; }
+      if (!note) { toast("内容・気づきを書いてください"); return; }
       await addTo("sessions", {
         date, type: $("sesType").value, partner: $("sesWith").value.trim(),
         note, phrases: $("sesPhrase").value.trim(), createdAt: new Date().toISOString()
       });
       $("sesNote").value = ""; $("sesPhrase").value = ""; $("sesWith").value = "";
-      alert("記録しました");
+      toast("記録しました");
     });
 
     ["diaryList", "logList", "sesList", "chatList"].forEach(listId => {
